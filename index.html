@@ -3,49 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tap Escape PRO</title>
+<title>Tap Escape FIXED</title>
 
 <style>
-:root {
-    --primary: #0ff;
-    --danger: #ff0055;
-    --fake: #a020f0;
-}
-
 body,html{
-    margin:0;
-    padding:0;
-    overflow:hidden;
-    background:black;
-    font-family:sans-serif;
+margin:0;
+padding:0;
+overflow:hidden;
+background:#0b0b1a;
 }
 
 canvas{
-    position:absolute;
-    top:0;
-    left:0;
-}
-
-/* MENU */
-.menu{
-    position:absolute;
-    top:50%;
-    left:50%;
-    transform:translate(-50%,-50%);
-    background:#000a;
-    padding:30px;
-    border:2px solid cyan;
-    text-align:center;
-    z-index:1000;
-}
-
-button{
-    margin:10px;
-    padding:10px 20px;
-    border:2px solid cyan;
-    background:none;
-    color:white;
-    cursor:pointer;
+position:absolute;
+top:0;
+left:0;
 }
 </style>
 </head>
@@ -54,18 +25,6 @@ button{
 
 <canvas id="gameCanvas"></canvas>
 
-<div id="menu" class="menu">
-    <h1>Tap Escape PRO</h1>
-    <button onclick="startGame()">Start</button>
-    <button onclick="showAbout()">About</button>
-</div>
-
-<div id="about" class="menu" style="display:none;">
-    <h2>About Us</h2>
-    <p>Created by Vishal Kharat (Gamesless)</p>
-    <button onclick="backMenu()">Back</button>
-</div>
-
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -73,155 +32,157 @@ const ctx = canvas.getContext("2d");
 canvas.width = innerWidth;
 canvas.height = innerHeight;
 
-let isPlaying = false;
-let time = 0;
+let isPlaying = true;
+let gravity = 0.5;
+let gameSpeed = 6;
+let score = 0;
 
-/* 🌄 BACKGROUND SYSTEM */
-function drawBackground(){
-    let phase = Math.floor(time / 600) % 4;
-
-    // Sky color change
-    if(phase === 0) ctx.fillStyle = "#87CEEB"; // day
-    if(phase === 1) ctx.fillStyle = "#FF8C00"; // sunset
-    if(phase === 2) ctx.fillStyle = "#001848"; // night
-    if(phase === 3) ctx.fillStyle = "#0b0b1a"; // deep night
-
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-
-    // Sun / Moon
-    if(phase < 2){
-        ctx.fillStyle = "yellow";
-        ctx.beginPath();
-        ctx.arc(canvas.width-100,100,40,0,Math.PI*2);
-        ctx.fill();
-    }else{
-        ctx.fillStyle = "white";
-        ctx.beginPath();
-        ctx.arc(canvas.width-100,100,30,0,Math.PI*2);
-        ctx.fill();
-    }
-
-    // Stars
-    if(phase >= 2){
-        for(let i=0;i<50;i++){
-            ctx.fillRect(Math.random()*canvas.width,Math.random()*canvas.height,2,2);
-        }
-    }
-
-    // Rain
-    if(phase === 3){
-        ctx.strokeStyle = "#0ff";
-        for(let i=0;i<50;i++){
-            let x = Math.random()*canvas.width;
-            let y = Math.random()*canvas.height;
-            ctx.beginPath();
-            ctx.moveTo(x,y);
-            ctx.lineTo(x+2,y+10);
-            ctx.stroke();
-        }
-    }
-}
-
-/* 🌳 TREES */
-let trees = [];
-
-function spawnTrees(){
-    if(Math.random()<0.05){
-        trees.push({
-            x:canvas.width,
-            h:50+Math.random()*100
-        });
-    }
-}
-
-function drawTrees(){
-    trees.forEach((t,i)=>{
-        t.x -= 2;
-        ctx.fillStyle = "green";
-        ctx.fillRect(t.x,canvas.height-t.h,20,t.h);
-
-        if(t.x < -20) trees.splice(i,1);
-    });
-}
-
-/* 🎮 PLAYER */
+/* PLAYER */
 const player = {
-    x:100,
-    y:200,
-    dy:0,
-    gravity:0.5,
-    jump(){
-        this.dy = -10;
-        jumpSound();
-    },
-    draw(){
-        ctx.fillStyle="cyan";
-        ctx.beginPath();
-        ctx.arc(this.x,this.y,10,0,Math.PI*2);
-        ctx.fill();
-    },
-    update(){
-        this.dy += this.gravity;
-        this.y += this.dy;
+x:100,
+y:200,
+r:10,
+dy:0,
+jump(){
+this.dy = -10;
+},
+update(){
+this.dy += gravity;
+this.y += this.dy;
 
-        if(this.y > canvas.height-10){
-            this.y = canvas.height-10;
-            this.dy = 0;
-        }
-
-        this.draw();
-    }
+if(this.y > canvas.height - this.r){
+this.y = canvas.height - this.r;
+this.dy = 0;
+}
+if(this.y < this.r){
+this.y = this.r;
+this.dy = 0;
+}
+}
 };
 
-/* 🔊 SOUND */
-function jumpSound(){
-    let audio = new Audio();
-    audio.src = "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg";
-    audio.play();
+/* OBSTACLES */
+let obstacles = [];
+
+function spawnObstacle(){
+if(Math.random()<0.02){
+obstacles.push({
+x:canvas.width,
+w:30,
+h:50+Math.random()*150,
+y:Math.random()>0.5 ? canvas.height-100 : 0
+});
+}
 }
 
-function crashSound(){
-    let audio = new Audio();
-    audio.src = "https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg";
-    audio.play();
+function updateObstacles(){
+for(let i=0;i<obstacles.length;i++){
+let o = obstacles[i];
+o.x -= gameSpeed;
+
+/* COLLISION (FIXED) */
+let dx = player.x - Math.max(o.x, Math.min(player.x, o.x+o.w));
+let dy = player.y - Math.max(o.y, Math.min(player.y, o.y+o.h));
+
+if((dx*dx + dy*dy) < player.r*player.r){
+gameOver();
+}
+
+if(o.x < -50){
+obstacles.splice(i,1);
+i--;
+}
+}
+}
+
+/* BACKGROUND */
+let time=0;
+
+function drawBackground(){
+let phase = Math.floor(time/600)%3;
+
+if(phase==0) ctx.fillStyle="#87CEEB";
+if(phase==1) ctx.fillStyle="#FF8C00";
+if(phase==2) ctx.fillStyle="#001848";
+
+ctx.fillRect(0,0,canvas.width,canvas.height);
+
+/* Sun/Moon */
+ctx.beginPath();
+ctx.arc(canvas.width-80,80,30,0,Math.PI*2);
+ctx.fillStyle = phase==2 ? "white":"yellow";
+ctx.fill();
+
+/* Stars */
+if(phase==2){
+for(let i=0;i<40;i++){
+ctx.fillRect(Math.random()*canvas.width,Math.random()*canvas.height,2,2);
+}
+}
+}
+
+/* TREES */
+let trees=[];
+function spawnTrees(){
+if(Math.random()<0.05){
+trees.push({x:canvas.width,h:50+Math.random()*100});
+}
+}
+function drawTrees(){
+trees.forEach((t,i)=>{
+t.x-=2;
+ctx.fillStyle="green";
+ctx.fillRect(t.x,canvas.height-t.h,20,t.h);
+if(t.x<-20) trees.splice(i,1);
+});
+}
+
+/* GAME OVER */
+function gameOver(){
+isPlaying=false;
+alert("Game Over! Score: "+score);
+location.reload();
 }
 
 /* LOOP */
 function loop(){
-    if(!isPlaying) return;
+if(!isPlaying) return;
 
-    drawBackground();
-    spawnTrees();
-    drawTrees();
-    player.update();
+drawBackground();
 
-    time++;
+spawnTrees();
+drawTrees();
 
-    requestAnimationFrame(loop);
-}
+spawnObstacle();
+updateObstacles();
 
-/* MENU FUNCTIONS */
-function startGame(){
-    document.getElementById("menu").style.display="none";
-    isPlaying = true;
-    loop();
-}
+/* DRAW OBSTACLES */
+ctx.fillStyle="red";
+obstacles.forEach(o=>{
+ctx.fillRect(o.x,o.y,o.w,o.h);
+});
 
-function showAbout(){
-    document.getElementById("menu").style.display="none";
-    document.getElementById("about").style.display="block";
-}
+player.update();
 
-function backMenu(){
-    document.getElementById("about").style.display="none";
-    document.getElementById("menu").style.display="block";
+/* DRAW PLAYER */
+ctx.beginPath();
+ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
+ctx.fillStyle="cyan";
+ctx.fill();
+
+/* SCORE */
+score++;
+time++;
+
+requestAnimationFrame(loop);
 }
 
 /* CONTROLS */
 window.addEventListener("click",()=>{
-    if(isPlaying) player.jump();
+player.jump();
 });
 
+loop();
 </script>
 
 </body>
