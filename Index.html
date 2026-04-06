@@ -441,5 +441,119 @@
             
             AudioEngine.hit();
             this.cameras.main.shake(300, 0.02);
+this.add.particles(player.x, player.y, 'particle', {
+                speed: { min: -300, max: 300 }, angle: { min: 0, max: 360 },
+                scale: { start: 1.5, end: 0 }, alpha: { start: 1, end: 0 },
+                lifespan: 800, quantity: 40, tint: 0xffaa00
+            }).explode();
 
+            player.setVisible(false);
+            this.trail.emitting = false;
+            Storage.setHighScore(Math.floor(this.score));
+
+            this.time.delayedCall(1200, () => {
+                this.cameras.main.fadeOut(500, 0, 0, 0);
+                this.cameras.main.once('camerafadeoutcomplete', () => {
+                    this.scene.start('GameOverScene', { score: this.score, speed: this.baseSpeed });
+                });
+            });
+        }
+
+        togglePause() {
+            this.isPaused = !this.isPaused;
+            if (this.isPaused) {
+                this.physics.pause();
+                this.spawnEvent.paused = true;
+                this.bgmEvent.paused = true;
+                this.pauseBg = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.6);
+                this.pauseTxt = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2, 'PAUSED', { fontSize: '56px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5);
+            } else {
+                this.physics.resume();
+                this.spawnEvent.paused = false;
+                this.bgmEvent.paused = false;
+                this.pauseBg.destroy();
+                this.pauseTxt.destroy();
+            }
+            AudioEngine.click();
+        }
+    }
+
+    // 4. GameOverScene
+    class GameOverScene extends Phaser.Scene {
+        constructor() { super('GameOverScene'); }
+
+        init(data) {
+            this.score = Math.floor(data.score);
+            this.speed = data.speed;
+        }
+
+        create() {
+            this.cameras.main.fadeIn(500, 0, 0, 0);
+            
+            // BG Image
+            this.add.image(GAME_WIDTH/2, GAME_HEIGHT/2, 'city').setScale(4).setTint(0x555555);
+            this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7);
+            
+            this.add.text(GAME_WIDTH/2, 120, 'GAME OVER', { fontSize: '56px', fontStyle: 'bold', color: '#ff4444', stroke: '#fff', strokeThickness: 3 }).setOrigin(0.5);
+            this.add.text(GAME_WIDTH/2, 200, `Distance: ${this.score}m`, { fontSize: '36px', color: '#fff' }).setOrigin(0.5);
+            this.add.text(GAME_WIDTH/2, 250, `Best: ${Storage.getHighScore()}m`, { fontSize: '24px', color: '#ffd700' }).setOrigin(0.5);
+
+            // Buttons
+            this.createButton(GAME_WIDTH/2, 350, '🔄 RESTART', 0x4CAF50, () => {
+                this.transitionTo('GameScene', { isResuming: false });
+            });
+
+            this.createButton(GAME_WIDTH/2, 430, '📺 CONTINUE (AD)', 0x9C27B0, () => {
+                AdManager.showAd(() => {
+                    this.transitionTo('GameScene', { isResuming: true, score: this.score, speed: this.speed });
+                });
+            });
+
+            this.createButton(GAME_WIDTH/2, 510, '🏠 MAIN MENU', 0x607D8B, () => {
+                this.transitionTo('MenuScene');
+            });
+        }
+
+        createButton(x, y, text, color, callback) {
+            let container = this.add.container(x, y);
+            let bg = this.add.rectangle(0, 0, 280, 55, color, 1).setInteractive({ useHandCursor: true }).setStrokeStyle(3, 0xffffff);
+            let label = this.add.text(0, 0, text, { fontSize: '22px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5);
+            container.add([bg, label]);
+
+            bg.on('pointerdown', () => { bg.setScale(0.95); AudioEngine.click(); });
+            bg.on('pointerup', () => { bg.setScale(1); callback(); });
+            bg.on('pointerout', () => { bg.setScale(1); });
+            return container;
+        }
+
+        transitionTo(sceneName, data = null) {
+            this.cameras.main.fadeOut(400, 0, 0, 0);
+            this.cameras.main.once('camerafadeoutcomplete', () => {
+                this.scene.start(sceneName, data);
+            });
+        }
+    }
+
+    // --- GAME CONFIG & INIT ---
+    const config = {
+        type: Phaser.AUTO,
+        width: GAME_WIDTH,
+        height: GAME_HEIGHT,
+        backgroundColor: '#000000',
+        scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH
+        },
+        physics: {
+            default: 'arcade',
+            arcade: { gravity: { y: 0 }, debug: false }
+        },
+        scene: [BootScene, MenuScene, GameScene, GameOverScene]
+    };
+
+    const game = new Phaser.Game(config);
+</script>
+
+</body>
+</html>
  
