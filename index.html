@@ -26,6 +26,10 @@
         display: block;
         width: 100%;
         height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1;
     }
     .ui-layer {
         position: absolute;
@@ -64,16 +68,10 @@
         border-radius: 15px;
         border: 2px solid var(--primary);
         box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
-        pointer-events: auto !important;
-        transition: opacity 0.3s;
+        pointer-events: auto;
         backdrop-filter: blur(5px);
-        z-index: 100;
+        z-index: 9998;
         display: block;
-    }
-    .hidden {
-        display: none !important;
-        opacity: 0;
-        pointer-events: none;
     }
     h1 {
         margin: 0 0 15px;
@@ -106,7 +104,7 @@
     
     button {
         position: relative;
-        z-index: 101;
+        z-index: 9999;
         background: transparent;
         color: var(--primary);
         border: 2px solid var(--primary);
@@ -172,7 +170,7 @@
         <button id="startBtn">Start Game</button>
     </div>
 
-    <div id="gameOverScreen" class="screens hidden">
+    <div id="gameOverScreen" class="screens" style="display: none;">
         <h1 style="text-shadow: 0 0 15px #ff0055; border-bottom: none;">Game Over</h1>
         <p id="finalScore" style="font-size: 24px; color: #fff;">Score: 0</p>
         <button id="restartBtn">Try Again</button>
