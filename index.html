@@ -64,11 +64,14 @@
         border-radius: 15px;
         border: 2px solid var(--primary);
         box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
-        pointer-events: auto;
+        pointer-events: auto !important;
         transition: opacity 0.3s;
         backdrop-filter: blur(5px);
+        z-index: 100;
+        display: block;
     }
     .hidden {
+        display: none !important;
         opacity: 0;
         pointer-events: none;
     }
@@ -102,6 +105,8 @@
     .box.purple { background: var(--fake); box-shadow: 0 0 10px var(--fake); }
     
     button {
+        position: relative;
+        z-index: 101;
         background: transparent;
         color: var(--primary);
         border: 2px solid var(--primary);
@@ -114,6 +119,7 @@
         box-shadow: 0 0 15px rgba(0, 255, 255, 0.2) inset;
         transition: all 0.2s;
         margin-top: 10px;
+        pointer-events: auto;
     }
     button:hover {
         background: var(--primary);
@@ -161,7 +167,7 @@
         <p>Tap or Click to jump.<br>Survive as long as possible!</p>
         <div class="legend">
             <span><div class="box red"></div> Deadly</span>
-            <span><div class="box purple"></div> Fake (Pass through)</span>
+            <span><div class="box purple"></div> Fake</span>
         </div>
         <button id="startBtn">Start Game</button>
     </div>
