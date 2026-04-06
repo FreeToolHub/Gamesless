@@ -100,7 +100,8 @@ class Obstacle {
         this.height = 60 + Math.random() * (height / 2.5);
         this.x = width;
         this.y = Math.random() > 0.5 ? height - this.height : 0;
-        this.isFake = Math.random() < 0.25;}
+        this.isFake = Math.random() < 0.25;
+        }
 
     draw() {
         ctx.beginPath();
@@ -190,31 +191,34 @@ function gameLoop() {
 }
 
 function startGame(e) {
-    if (e && e.type === 'touchstart') {
-        e.preventDefault();
-    }
-
-    // Hide UI
-    startScreen.style.display = "none";
-    gameOverScreen.style.display = "none";
+    if (e && e.cancelable) e.preventDefault();
+    console.log("START CLICKED");
     
+    if (isPlaying) return; // Prevent multiple instances
+
     if (audioCtx.state === 'suspended') audioCtx.resume();
 
-    // Reset Core Variables
-    player.y = height / 2;
-    player.dy = 0;
-    obstacles = [];
+    const menu = document.getElementById("startScreen");
+    if (menu) menu.style.display = "none";
+    
+    const overMenu = document.getElementById("gameOverScreen");
+    if (overMenu) overMenu.style.display = "none";
+
+    isPlaying = true;
     score = 0;
+    obstacles = [];
     frames = 0;
     gameSpeed = 6;
+    
+    player.y = height / 2;
+    player.dy = 0;
+    
     scoreEl.innerText = `Score: ${score}`;
     focusOverlay.style.opacity = '0';
     isFocusModeActive = false;
     
-    // Start State
-    isPlaying = true;
     cancelAnimationFrame(animationId);
-    animationId = requestAnimationFrame(gameLoop);
+    requestAnimationFrame(gameLoop);
 }
 
 function gameOver() {
@@ -229,29 +233,34 @@ function gameOver() {
     }
     
     finalScoreEl.innerText = `Score: ${score}`;
-    gameOverScreen.style.display = "block";
+    document.getElementById('gameOverScreen').style.display = "block";
 }
 
-// Attach Event Listeners Ensure DOM is Loaded
-document.addEventListener("DOMContentLoaded", () => {
-    const startBtn = document.getElementById('startBtn');
-    const restartBtn = document.getElementById('restartBtn');
+// Strict DOM loaded attachment pattern
+document.addEventListener("DOMContentLoaded", function () {
+    const startBtn = document.getElementById("startBtn");
+    const restartBtn = document.getElementById("restartBtn");
 
-    // Click and Touch events for buttons
-    startBtn.addEventListener("click", startGame);
-    startBtn.addEventListener("touchstart", startGame, { passive: false });
-    
-    restartBtn.addEventListener("click", startGame);
-    restartBtn.addEventListener("touchstart", startGame, { passive: false });
+    if (startBtn) {
+        startBtn.addEventListener("click", startGame);
+        startBtn.addEventListener("touchstart", startGame, { passive: false });
+        startBtn.addEventListener("pointerdown", startGame);
+    }
 
-    // Gameplay Controls
+    if (restartBtn) {
+        restartBtn.addEventListener("click", startGame);
+        restartBtn.addEventListener("touchstart", startGame, { passive: false });
+        restartBtn.addEventListener("pointerdown", startGame);
+    }
+
+    // Global listeners for gameplay jumping
     window.addEventListener('mousedown', (e) => {
         if (e.target.tagName !== 'BUTTON' && isPlaying) player.jump();
     });
 
     window.addEventListener('touchstart', (e) => {
         if (e.target.tagName !== 'BUTTON' && isPlaying) {
-            e.preventDefault(); 
+            if (e.cancelable) e.preventDefault();
             player.jump();
         }
     }, { passive: false });
