@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Endless Runner Pro - Deluxe Edition</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #111;
+            overflow: hidden;
+            touch-action: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+</head>
+<body>
+
+<script>
+    // --- UTILS & DATA ---
+    const GAME_WIDTH = 800;
+    const GAME_HEIGHT = 600;
+    
+    // LocalStorage Manager
+    const Storage = {
+        getHighScore: () => parseInt(localStorage.getItem('runner_highscore')) || 0,
+        setHighScore: (score) => localStorage.setItem('runner_highscore', Math.max(score, Storage.getHighScore())),
+        getUnlockedSkins: () => JSON.parse(localStorage.getItem('runner_skins')) || [0xffffff],
+        unlockSkin: (colorCode) => {
+            let skins = Storage.getUnlockedSkins();
+            if (!skins.includes(colorCode)) {
+                skins.push(colorCode);
+                localStorage.setItem('runner_skins', JSON.stringify(skins));
+            }
+        },
+        getCurrentSkin: () => parseInt(localStorage.getItem('runner_current_skin')) || 0xffffff,
+        setCurrentSkin: (colorCode) => localStorage.setItem('runner_current_skin', colorCode)
+    };
+
+    // Monetization / Ad Simulation
+    const AdManager = {
+        showAd: (onSuccess) => {
+            // 💰 AD NETWORK INTEGRATION POINT (e.g., Poki, GameDistribution)
+            console.log("--- AD STARTED ---");
+            let overlay = document.createElement('div');
+            overlay.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);color:white;display:flex;justify-content:center;align-items:center;font-size:30px;z-index:999;";
+            overlay.innerHTML = "Simulating Ad Video...<br>Please wait 2s";
+            document.body.appendChild(overlay);
+            
+            setTimeout(() => {
+                document.body.removeChild(overlay);
+                console.log("--- AD FINISHED ---");
+                if (onSuccess) onSuccess();
+            }, 2000);
+        },
+        redirectExternal: () => {
+            // 💰 SPONSOR REDIRECT
+            window.open('https://your-monetization-link.com', '_blank');
+        }
+    };
+
+    // Synthetic Audio Engine (Fallback for missing URLs & guaranteed mobile sound)
+    const AudioEngine = {
+        ctx: new (window.AudioContext || window.webkitAudioContext)(),
+        playTone: function(freq, type, duration, vol=0.1) {
+            if (this.ctx.state === 'suspended') this.ctx.resume();
+            let osc = this.ctx.createOscillator();
+            let gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + duration);
+        },
+        jump: function() { this.playTone(400, 'sine', 0.3, 0.2); setTimeout(()=>this.playTone(600, 'sine', 0.2, 0.2), 50); },
+        hit: function() { this.playTone(100, 'sawtooth', 0.5, 0.3); setTimeout(()=>this.playTone(50, 'square', 0.4, 0.3), 100); },
+        click: function() { this.playTone(800, 'sine', 0.1, 0.1); },
+        bgmTick: function() { this.playTone(200 + Math.random()*50, 'triangle', 0.2, 0.05); } // Very simple ambient pulse
+    };
+
+    // --- SCENES ---
+
+    // 1. BootScene: Assets Generation & Loading
+    class BootScene extends Phaser.Scene {
+        constructor() { super('BootScene'); }
+        
+        preload() {
+            let loadingText = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2, 'Loading Assets...', { fontSize: '32px', color: '#fff' }).setOrigin(0.5);
+
+            // Load placeholder audio (will fallback to AudioEngine if fails)
+            this.load.audio('bgm', 'https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg');
+            this.load.on('loaderror', (file) => { console.log('Audio placeholder failed, using synthetic fallback for:', file.key); });
+        }
+
+        create() {
+            this.generateTextures();
+            this.createAnimations();
+            this.scene.start('MenuScene');
+        }
+
+        generateTextures() {
+            let g = this.add.graphics();
+
+            // 1. Character Sprite Sheet (4 frames: Stand, Run1, Run2, Jump)
+            let canvas = document.createElement('canvas');
+            canvas.width = 200; canvas.height = 60; // 4 frames, 50x60 each
+            let ctx = canvas.getContext('2d');
+            
+            const drawChar = (ctx, x, y, legOffset, armOffset) => {
+                ctx.save(); ctx.translate(x, y);
+                // Head (Brown skin tone)
+                ctx.fillStyle = '#8d5524'; ctx.beginPath(); ctx.arc(25, 15, 12, 0, Math.PI*2); ctx.fill();
+                // Hair
+                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(25, 12, 12, Math.PI, 0); ctx.fill();
+                // Body (Orange shirt - tintable)
+                ctx.fillStyle = '#ffffff'; // White to allow tinting via skins
+                ctx.fillRect(18, 27, 14, 18);
+                // Legs (Orange pants)
+                ctx.fillStyle = '#ff6600';
+                ctx.fillRect(20 - legOffset, 45, 6, 12);
+                ctx.fillRect(26 + legOffset, 45, 6, 12);
+                // Arms
+                ctx.fillStyle = '#8d5524';
+                ctx.fillRect(12 - armOffset, 28, 6, 14);
+                ctx.fillRect(32 + armOffset, 28, 6, 14);
+                ctx.restore();
+            };
+
+            // Frame 0: Run 1
+            drawChar(ctx, 0, 0, 5, -5);
+            // Frame 1: Run 2
+            drawChar(ctx, 50, 0, -5, 5);
+            // Frame 2: Stand
+            drawChar(ctx, 100, 0, 0, 0);
+            // Frame 3: Jump
+            drawChar(ctx, 150, 0, 3, 8);
+
+            this.textures.addSpriteSheet('player', canvas, { frameWidth: 50, frameHeight: 60 });
+
+            // 2. Mountains Parallax
+            g.clear(); g.fillStyle(0x2c3e50, 1);
+            g.fillTriangle(100, 0, 0, 200, 200, 200);
+            g.fillTriangle(250, 50, 150, 200, 350, 200);
+            g.generateTexture('mountains', 400, 200);
+
+            // 3. City/Houses Parallax
+            g.clear(); g.fillStyle(0x1a1a24, 1);
+            g.fillRect(10, 50, 60, 100); g.fillRect(80, 20, 70, 130); g.fillRect(160, 70, 50, 80);
+            g.fillStyle(0xffff66, 0.8); // Windows
+            g.fillRect(20, 70, 15, 15); g.fillRect(90, 40, 15, 15); g.fillRect(120, 80, 15, 15);
+            g.generateTexture('city', 250, 150);
+
+            // 4. Clouds
+            g.clear(); g.fillStyle(0xffffff, 0.7);
+            g.fillCircle(30, 30, 20); g.fillCircle(60, 30, 30); g.fillCircle(90, 30, 20);
+            g.generateTexture('cloud', 120, 60);
+
+            // 5. Sun & Moon
+            g.clear(); g.fillStyle(0xffd700, 1); g.fillCircle(30, 30, 30); g.generateTexture('sun', 60, 60);
+            g.clear(); g.fillStyle(0xdddddd, 1); g.fillCircle(30, 30, 30); g.generateTexture('moon', 60, 60);
+
+            // 6. Ground
+            g.clear(); 
+            g.fillStyle(0x3e8914, 1); g.fillRect(0, 0, 100, 40); // Grass top
+            g.fillStyle(0x5c4033, 1); g.fillRect(0, 40, 100, 60); // Dirt
+            g.generateTexture('ground', 100, 100);
+
+            // 7. Obstacle (Spiky Rock)
+            g.clear(); g.fillStyle(0x555555, 1);
+            g.fillTriangle(20, 0, 0, 40, 40, 40);
+            g.fillStyle(0x333333, 1);
+            g.fillTriangle(20, 10, 10, 40, 30, 40);
+            g.generateTexture('obstacle', 40, 40);
+
+            // 8. Particles (Star, Raindrop, Dust)
+            g.clear(); g.fillStyle(0xffffff, 1); g.fillCircle(4, 4, 4); g.generateTexture('particle', 8, 8);
+            g.clear(); g.fillStyle(0x66aaff, 0.8); g.fillRect(0, 0, 2, 10); g.generateTexture('raindrop', 2, 10);
+
+            g.destroy();
+        }
+
+        createAnimations() {
+            this.anims.create({ key: 'run', frames: this.anims.generateFrameNumbers('player', { start: 0, end: 1 }), frameRate: 10, repeat: -1 });
+            this.anims.create({ key: 'stand', frames: [ { key: 'player', frame: 2 } ], frameRate: 20 });
+            this.anims.create({ key: 'jump', frames: [ { key: 'player', frame: 3 } ], frameRate: 20 });
+        }
+    }
+
+    // 2. MenuScene
+    class MenuScene extends Phaser.Scene {
+        constructor() { super('MenuScene'); }
+
+        create() {
+            this.cameras.main.fadeIn(800, 0, 0, 0);
+
+            // Background
+            this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x87CEEB).setOrigin(0);
+            this.add.image(GAME_WIDTH/2, GAME_HEIGHT - 200, 'city').setScale(2).setAlpha(0.3);
+            this.add.image(GAME_WIDTH/2, GAME_HEIGHT - 50, 'ground').setScale(8, 1);
+
+            // Title Animation
+            let title = this.add.text(GAME_WIDTH/2, 120, 'RUNNER PRO', { fontSize: '64px', fontStyle: 'bold', color: '#fff', stroke: '#000', strokeThickness: 6 }).setOrigin(0.5);
+            this.tweens.add({ targets: title, y: 140, yoyo: true, repeat: -1, duration: 1500, ease: 'Sine.inOut' });
+
+            this.add.text(GAME_WIDTH/2, 220, `High Score: ${Math.floor(Storage.getHighScore())}m`, { fontSize: '28px', color: '#ffd700', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
+
+            // Character Display
+            let displayChar = this.add.sprite(200, 350, 'player').setScale(2).play('run');
+            displayChar.setTint(Storage.getCurrentSkin());
+
+            // Buttons
+            this.createButton(GAME_WIDTH/2 + 100, 320, '▶ START GAME', 0x4CAF50, () => {
+                this.cameras.main.fadeOut(500, 0, 0, 0);
+                this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('GameScene'));
+            });
+
+            this.createButton(GAME_WIDTH/2 + 100, 400, '🎁 UNLOCK SKIN (AD)', 0x2196F3, () => {
+                AdManager.showAd(() => {
+                    const newSkin = Math.random() * 0xffffff;
+                    Storage.unlockSkin(newSkin);
+                    Storage.setCurrentSkin(newSkin);
+                    displayChar.setTint(newSkin);
+                    alert("New skin unlocked & equipped!");
+                });
+            });
+
+            this.createButton(GAME_WIDTH/2 + 100, 480, '🌟 VISIT SPONSOR', 0xFF9800, () => {
+                AdManager.redirectExternal();
+            });
+        }
+
+        createButton(x, y, text, color, callback) {
+            let container = this.add.container(x, y);
+            let bg = this.add.rectangle(0, 0, 280, 55, color, 1).setInteractive({ useHandCursor: true })
+                .setStrokeStyle(4, 0xffffff).setShadow(3, 3, 'rgba(0,0,0,0.5)', 5);
+            let label = this.add.text(0, 0, text, { fontSize: '22px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5);
+            
+            container.add([bg, label]);
+
+            bg.on('pointerdown', () => { bg.setScale(0.95); AudioEngine.click(); });
+            bg.on('pointerup', () => { bg.setScale(1); callback(); });
+            bg.on('pointerout', () => { bg.setScale(1); });
+
+            return container;
+        }
+    }
+
+    // 3. GameScene
+    class GameScene extends Phaser.Scene {
+        constructor() { super('GameScene'); }
+
+        init(data) {
+            this.isResuming = data.isResuming || false;
+            this.score = this.isResuming ? data.score : 0;
+            this.baseSpeed = this.isResuming ? data.speed : 350;
+            this.gameSpeed = this.baseSpeed;
+            this.isGameOver = false;
+            this.isPaused = false;
+            this.dayTime = 0; // 0 to 1 cycle
+        }
+
+        create() {
+            this.cameras.main.fadeIn(500, 0, 0, 0);
+            this.cameras.main.zoomTo(1.02, 2000, 'Sine.easeInOut', true); // Subtle zoom effect
+
+            // Background System
+            this.sky = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x87CEEB).setOrigin(0);
+            
+            this.sun = this.add.image(600, 100, 'sun');
+            this.moon = this.add.image(600, 150, 'moon').setAlpha(0);
+            
+            this.stars = this.add.particles(0, 0, 'particle', {
+                x: { min: 0, max: GAME_WIDTH }, y: { min: 0, max: GAME_HEIGHT/2 },
+                lifespan: 2000, alpha: { start: 0, end: 1, yoyo: true },
+                scale: { min: 0.2, max: 0.8 }, quantity: 2, emitting: false
+            });
+
+            this.clouds = this.add.tileSprite(GAME_WIDTH/2, 150, GAME_WIDTH, 60, 'cloud').setAlpha(0.8);
+            this.mountains = this.add.tileSprite(GAME_WIDTH/2, GAME_HEIGHT - 150, GAME_WIDTH, 200, 'mountains');
+            this.houses = this.add.tileSprite(GAME_WIDTH/2, GAME_HEIGHT - 100, GAME_WIDTH, 150, 'city');
+            
+            // Ground
+            this.ground = this.add.tileSprite(GAME_WIDTH/2, GAME_HEIGHT - 50, GAME_WIDTH, 100, 'ground');
+            this.physics.add.existing(this.ground, true);
+
+            // Weather System (Rain)
+            this.rainEmitter = this.add.particles(0, 0, 'raindrop', {
+                x: { min: 0, max: GAME_WIDTH }, y: -20,
+                speedY: { min: 400, max: 600 }, speedX: { min: -100, max: -50 },
+                lifespan: 1500, quantity: 5, alpha: 0.6, emitting: false
+            });
+
+            // Player Shadow
+            this.shadow = this.add.ellipse(100, GAME_HEIGHT - 100, 40, 10, 0x000000, 0.4);
+
+            // Player
+            this.player = this.physics.add.sprite(100, GAME_HEIGHT - 150, 'player').play('run');
+            this.player.setTint(Storage.getCurrentSkin());
+            this.player.setGravityY(2200);
+            this.player.setSize(25, 50); // Fine-tune hitbox
+            this.physics.add.collider(this.player, this.ground);
+
+            // Trail Effect
+            this.trail = this.add.particles(0, 0, 'particle', {
+                speed: { min: -50, max: 50 }, scale: { start: 0.5, end: 0 },
+                alpha: { start: 0.3, end: 0 }, lifespan: 400, tint: Storage.getCurrentSkin()
+            });
+            this.trail.startFollow(this.player, 0, 20);
+
+            // Obstacles Group
+            this.obstacles = this.physics.add.group();
+            this.physics.add.collider(this.obstacles, this.ground);
+            this.physics.add.overlap(this.player, this.obstacles, this.hitObstacle, null, this);
+
+            // Input
+            this.input.on('pointerdown', this.jump, this);
+            this.input.keyboard.on('keydown-SPACE', this.jump, this);
+
+            // UI
+            this.scoreText = this.add.text(20, 20, 'Distance: 0m', { fontSize: '26px', fontStyle: 'bold', color: '#fff', stroke: '#000', strokeThickness: 4 });
+            
+            let pauseBtn = this.add.text(GAME_WIDTH - 120, 20, '⏸ PAUSE', { fontSize: '24px', fontStyle: 'bold', color: '#fff', stroke: '#000', strokeThickness: 4 })
+                .setInteractive({ useHandCursor: true });
+            pauseBtn.on('pointerdown', this.togglePause, this);
+
+            // Spawners & Events
+            this.spawnEvent = this.time.addEvent({ delay: 1500, callback: this.spawnObstacle, callbackScope: this, loop: true });
+            this.weatherEvent = this.time.addEvent({ delay: 10000, callback: this.toggleWeather, callbackScope: this, loop: true });
+            
+            // BGM Loop Simulation
+            this.bgmEvent = this.time.addEvent({ delay: 500, callback: AudioEngine.bgmTick, loop: true });
+        }
+
+        update(time, delta) {
+            if (this.isGameOver || this.isPaused) return;
+
+            let dt = delta / 1000;
+
+            // Environment Scrolling (Parallax)
+            this.clouds.tilePositionX += (this.gameSpeed * 0.1) * dt;
+            this.mountains.tilePositionX += (this.gameSpeed * 0.3) * dt;
+            this.houses.tilePositionX += (this.gameSpeed * 0.6) * dt;
+            this.ground.tilePositionX += this.gameSpeed * dt;
+
+            // Day/Night Cycle Logic
+            this.dayTime += dt * 0.02; // cycle speed
+            let cycle = (Math.sin(this.dayTime) + 1) / 2; // 0 to 1
+            
+            let skyColor = Phaser.Display.Color.Interpolate.ColorWithColor(
+                Phaser.Display.Color.ValueToColor(0x000022), // Night
+                Phaser.Display.Color.ValueToColor(0x87CEEB), // Day
+                1, cycle
+            );
+            this.sky.setFillStyle(Phaser.Display.Color.GetColor(skyColor.r, skyColor.g, skyColor.b));
+            
+            this.sun.y = 100 + (1-cycle)*300;
+            this.sun.alpha = cycle;
+            this.moon.y = 100 + cycle*300;
+            this.moon.alpha = 1 - cycle;
+            this.stars.emitting = cycle < 0.3;
+
+            // Player logic
+            if (this.player.body.touching.down) {
+                if (this.player.anims.currentAnim.key !== 'run') this.player.play('run', true);
+                this.shadow.scaleX = 1; this.shadow.alpha = 0.4;
+                this.trail.emitting = true;
+            } else {
+                this.shadow.scaleX = 0.5; this.shadow.alpha = 0.1;
+                this.trail.emitting = false;
+            }
+
+            // Move obstacles
+            this.obstacles.getChildren().forEach(obs => {
+                obs.x -= this.gameSpeed * dt;
+                obs.angle -= (this.gameSpeed * 0.2) * dt; // slight rotation for rocks
+                if (obs.x < -50) obs.destroy();
+            });
+
+            // Update Score & Difficulty
+            this.score += (this.gameSpeed * 0.05) * dt;
+            this.scoreText.setText(`Distance: ${Math.floor(this.score)}m`);
+
+            this.gameSpeed += 0.2; // Progressive speed
+            this.spawnEvent.delay = Phaser.Math.Between(Math.max(600, 1500 - (this.gameSpeed)), Math.max(1200, 2500 - this.gameSpeed));
+        }
+
+        jump() {
+            if (this.isGameOver || this.isPaused) return;
+            if (this.player.body.touching.down) {
+                this.player.setVelocityY(-900);
+                this.player.play('jump');
+                AudioEngine.jump();
+                
+                // Dust particle
+                this.add.particles(this.player.x, this.player.y + 25, 'particle', {
+                    speedX: { min: -150, max: -50 }, speedY: { min: -50, max: 0 },
+                    scale: { start: 1, end: 0 }, alpha: { start: 0.5, end: 0 }, lifespan: 400, quantity: 10
+                }).explode();
+            }
+        }
+
+        spawnObstacle() {
+            if (this.isGameOver || this.isPaused) return;
+            let obs = this.obstacles.create(GAME_WIDTH + 50, GAME_HEIGHT - 120, 'obstacle');
+            obs.body.setAllowGravity(false);
+            obs.body.setImmovable(true);
+            obs.setCircle(15, 5, 5); // Tighter collision
+        }
+
+        toggleWeather() {
+            if (Math.random() > 0.5) {
+                this.rainEmitter.emitting = !this.rainEmitter.emitting;
+                if(this.rainEmitter.emitting) this.cameras.main.flash(500, 255, 255, 255); // Lightning flash
+            }
+        }
+
+        hitObstacle(player, obstacle) {
+            if (this.isGameOver) return;
+            this.isGameOver = true;
+            this.physics.pause();
+            this.bgmEvent.remove();
+            
+            AudioEngine.hit();
+            this.cameras.main.shake(300, 0.02);
+
+ 
